@@ -2,6 +2,8 @@ from collections import deque
 import socket
 from threading import Condition
 
+from six import b
+
 from lockeddata import LockedData
 from groundcontrol import GroundControl
 from spaceport import Spaceport
@@ -22,9 +24,7 @@ class Core(object):
     # Map from socket to addr structure of each satellite.
     self._sat_map = LockedData(dict())
     # Map from event type to list of satellite sockets.
-    self._event_sat_map = LockedData(dict())
-    # List of satellites registered to all events.
-    self._all_events_sats = LockedData(list())
+    self._event_sat_map = LockedData({b('all'): []})
     # Global queue of events to route.
     self._gbl_queue = LockedData(deque())
     # Condition variable for ground control to use to notify switches of new

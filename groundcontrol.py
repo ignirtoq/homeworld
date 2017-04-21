@@ -40,7 +40,7 @@ class GroundControl(Thread):
 
   def _listen_for_events(self):
     # Copy the currently registered satellite list.
-    with sat_map.lock:
+    with self._sat_map.lock:
       rd_list = [x for x in self._sat_map.data]
     # Wait for a socket message.
     return select(rd_list,[],[], self._timeout)[0]
@@ -63,6 +63,6 @@ class GroundControl(Thread):
     if not len(events):
       return
     with self._gbl_queue.lock:
-      self._gbl_queue.data.extendleft(event_queue)
+      self._gbl_queue.data.extendleft(events)
     with self._cond:
       self._cond.notify()
