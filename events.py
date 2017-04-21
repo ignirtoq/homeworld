@@ -102,3 +102,13 @@ class Event(object):
           val += int2byte(it_next(it))
         self.properties[key] = val
     return self
+
+
+class ReceivedEvent(object):
+  """
+  An event together with its source.
+  """
+
+  def __init__(self, event, source):
+    self.event = event
+    self.source = source
