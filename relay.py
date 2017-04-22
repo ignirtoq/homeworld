@@ -1,34 +1,41 @@
 from collections import deque
 from threading import Thread
-from sockutils import bytes2long, long2bytes
+
 from six import b
 
+from sockutils import bytes2long, long2bytes
+
+# Unit test modules
+import unittest as _ut
+import events as _ev
+from lockeddata import LockedData as _LD
+from threading import Condition as _Cond
 
 class Relay(Thread):
   """
   Route events placed into its queue to registered satellites.
   """
-  def __init__(self, queue, signal, sat_map, event_sat_map):
+  def __init__(self, queue, signal, event_sat_map):
     # Always call the parent Thread object's init function first.
-    Thread.__init__()
+    Thread.__init__(self)
     # Check that the variables are of the right types.
     if not isinstance(queue.data, deque):
       raise TypeError('queue must be a locked deque')
-    if not isinstance(sat_map.data, dict):
-      raise TypeError('sat_map must be a locked dictionary')
     if not isinstance(event_sat_map.data, dict):
       raise TypeError('event_sat_map must be a dict')
     self._gbl_queue = queue
     self._queue = deque()
     self._cond = signal
-    self._sat_map = sat_map
     self._event_sat_map = event_sat_map
 
   def run(self):
     while True:
-      self._get_events()
-      while len(self._queue):
-        self._process_event(self._queue.pop())
+      self._run_loop()
+
+  def _run_loop(self):
+    self._get_events()
+    while len(self._queue):
+      self._process_event(self._queue.pop())
 
   def _get_events(self):
     with self._cond:
@@ -39,7 +46,7 @@ class Relay(Thread):
 
   def _process_event(self, rec_event):
     event = rec_event.event
-    if event.type.lower() == b('register')
+    if event.type.lower() == b('register') \
     or event.type.lower() == b('unregister'):
       self._process_register_event(rec_event)
     else:
@@ -47,10 +54,10 @@ class Relay(Thread):
 
   def _route_event(self, rec_event):
     event = rec_event.event
-    for sat in self._event_sat_map[b('all')]:
+    for sat in self._event_sat_map.data[b('all')]:
       _send_event(event, sat)
-    if event.type in self._event_sat_map:
-      for sat in self._event_sat_map[event.type]:
+    if event.type in self._event_sat_map.data:
+      for sat in self._event_sat_map.data[event.type]:
         _send_event(event, sat)
 
   def _process_register_event(self, rec_event):
@@ -62,10 +69,10 @@ class Relay(Thread):
     # Drop registration events without a "type" property.
     if b('type') not in event.properties:
       return
-    if event.properties[b('type').lower()] == b('register'):
+    if event.type.lower() == b('register'):
       # Add satellite to list for specified type.
       self._add_sat_event(sat, event.properties[b('type')])
-    elif event.properties[b('type').lower()] == b('register'):
+    elif event.type.lower() == b('unregister'):
       # Remove satellite from list for specified type.
       self._remove_sat_event(sat, event.properties[b('type')])
 
@@ -101,3 +108,41 @@ def _send_event(event, sat):
   event_len = long2bytes(len(event_bytes))
   sat.send(event_len)
   sat.send(event_bytes)
+
+
+class _RelayTestCase(_ut.TestCase):
+
+  def setUp(self):
+    # Set up a dummy satellite object that counts calls to send.
+    self.sat_send_called = 0
+    class DummySat(object):
+      def send(sat_self, data):
+        self.sat_send_called += 1
+    self.sat = DummySat()
+    self.queue = _LD(deque())
+    self.signal = _Cond()
+    self.ev_sat_map = _LD({b('all'): [self.sat]})
+    self.relay = Relay(self.queue, self.signal, self.ev_sat_map)
+
+  def test_send_all(self):
+    # Create event to process.
+    ev = _ev.Event(type=b('test'))
+    rec_ev = _ev.ReceivedEvent(ev, self.sat)
+    self.relay._process_event(rec_ev)
+    self.assertEqual(self.sat_send_called, 2)
+
+  def test_add_sat(self):
+    self.assertFalse(b('test') in self.ev_sat_map.data)
+    self.relay._add_sat_event(self.sat, b('test'))
+    self.assertTrue(b('test') in self.ev_sat_map.data)
+
+  def test_register_event(self):
+    # Create register event to process.
+    ev = _ev.Event(type=b('register'),
+                   properties={b('type'): b('test')})
+    rec_ev = _ev.ReceivedEvent(ev, self.sat)
+    self.assertFalse(not hasattr(ev, 'properties'))
+    self.assertFalse(b('type') not in ev.properties)
+    self.relay._process_register_event(rec_ev)
+    self.assertEqual(self.sat_send_called, 0)
+    self.assertTrue(b('test') in self.ev_sat_map.data)
