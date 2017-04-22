@@ -8,6 +8,9 @@ class Flag(object):
   def __nonzero__(self):
     return self.value
 
+  def __bool__(self):
+    return self.__nonzero__()
+
   def set(self):
     self.value = True
 
