@@ -20,10 +20,12 @@ class GroundControl(Thread):
   Listen for satellite messages on their sockets.
   """
 
-  def __init__(self, sat_map, event_queue, signal, shutdown_flag, timeout=0.5):
+  def __init__(self, sat_map, event_sat_map, event_queue, signal,
+               shutdown_flag, timeout=0.5):
     # Always call the parent Thread object's init function first.
     Thread.__init__(self)
     self._sat_map = sat_map
+    self._event_sat_map = event_sat_map
     self._gbl_queue = event_queue
     self._cond = signal
     self._shutdown_flag = shutdown_flag
@@ -60,13 +62,24 @@ class GroundControl(Thread):
     # If the header is empty, the socket is closed, so remove the satellite
     # from the sat map.
     if not len(hdr):
-      with self._sat_map.lock:
-        del self._sat_map.data[sat]
+      self._remove_sat(sat)
       return None
     event_len = bytes2long(hdr)
     # Receive the event.
     event_bytes = sat.recv(event_len)
     return Event().from_bytes(event_bytes)
+
+  def _remove_sat(self, sat):
+    # Remove satellites that have closed their connection from both the
+    # satellite map and any event registration lists.
+    with self._sat_map.lock:
+      del self._sat_map.data[sat]
+    with self._event_sat_map.lock:
+      for ev_type in self._event_sat_map.data:
+        try:
+          self._event_sat_map.data[ev_type].remove(sat)
+        except ValueError:
+          continue
 
   def _add_events_to_queue(self, events):
     if not len(events):
@@ -95,11 +108,12 @@ class _GroundControlTestCase(_ut.TestCase):
     def select(rd_list, wr_list, ex_list, timeout=None):
       return [self.sat],[],[]
     self.sat_map = _LD({self.sat: True})
+    self.event_sat_map = _LD({b('all'): [self.sat]})
     self.event_queue = _LD(deque())
     self.signal = _Cond()
     self.flag = _Flag()
-    self.gc = GroundControl(self.sat_map, self.event_queue, self.signal,
-                            self.flag)
+    self.gc = GroundControl(self.sat_map, self.event_sat_map, self.event_queue,
+                            self.signal, self.flag)
 
   def test_add_ev_to_queue(self):
     self.assertEqual(len(self.event_queue.data), 0)
@@ -115,6 +129,13 @@ class _GroundControlTestCase(_ut.TestCase):
     rd_list = self.gc._listen_for_events()
     self.assertEqual(len(rd_list), 1)
     self.assertEqual(rd_list[0], self.sat)
+
+  def test_remove_sat(self):
+    self.assertTrue(self.sat in self.sat_map.data)
+    self.assertTrue(self.sat in self.event_sat_map.data[b('all')])
+    self.gc._remove_sat(self.sat)
+    self.assertFalse(self.sat in self.sat_map.data)
+    self.assertFalse(self.sat in self.event_sat_map.data[b('all')])
 
   def test_run_loop(self):
     self.assertEqual(len(self.event_queue.data), 0)
