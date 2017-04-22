@@ -16,10 +16,10 @@ class Relay(Thread):
   """
   Route events placed into its queue to registered satellites.
   """
-  def __init__(self, queue, signal, event_sat_map, shutdown_flag):
+  def __init__(self, event_queue, signal, event_sat_map, shutdown_flag):
     # Always call the parent Thread object's init function first.
     Thread.__init__(self)
-    self._gbl_queue = queue
+    self._gbl_queue = event_queue
     self._queue = deque()
     self._cond = signal
     self._event_sat_map = event_sat_map
