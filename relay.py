@@ -4,11 +4,11 @@ from threading import Thread
 from six import b
 
 from sockutils import bytes2long, long2bytes
-from flag import Flag
 
 # Unit test modules
 import unittest as _ut
 import events as _ev
+from flag import Flag as _Flag
 from lockeddata import LockedData as _LD
 from threading import Condition as _Cond
 
@@ -19,13 +19,6 @@ class Relay(Thread):
   def __init__(self, queue, signal, event_sat_map, shutdown_flag):
     # Always call the parent Thread object's init function first.
     Thread.__init__(self)
-    # Check that the variables are of the right types.
-    if not isinstance(queue.data, deque):
-      raise TypeError('queue must be a locked deque')
-    if not isinstance(event_sat_map.data, dict):
-      raise TypeError('event_sat_map must be a dict')
-    if not isinstance(shutdown_flag, Flag):
-      raise TypeError('shutdown_flag must be a Flag')
     self._gbl_queue = queue
     self._queue = deque()
     self._cond = signal
@@ -131,7 +124,7 @@ class _RelayTestCase(_ut.TestCase):
     self.queue = _LD(deque())
     self.signal = _Cond()
     self.ev_sat_map = _LD({b('all'): [self.sat]})
-    self.flag = Flag()
+    self.flag = _Flag()
     self.relay = Relay(self.queue, self.signal, self.ev_sat_map, self.flag)
 
   def test_send_all(self):
