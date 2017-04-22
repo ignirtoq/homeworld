@@ -4,6 +4,7 @@ from threading import Thread
 from six import b
 
 from sockutils import bytes2long, long2bytes
+from flag import Flag
 
 # Unit test modules
 import unittest as _ut
@@ -15,7 +16,7 @@ class Relay(Thread):
   """
   Route events placed into its queue to registered satellites.
   """
-  def __init__(self, queue, signal, event_sat_map):
+  def __init__(self, queue, signal, event_sat_map, shutdown_flag):
     # Always call the parent Thread object's init function first.
     Thread.__init__(self)
     # Check that the variables are of the right types.
@@ -23,13 +24,16 @@ class Relay(Thread):
       raise TypeError('queue must be a locked deque')
     if not isinstance(event_sat_map.data, dict):
       raise TypeError('event_sat_map must be a dict')
+    if not isinstance(shutdown_flag, Flag):
+      raise TypeError('shutdown_flag must be a Flag')
     self._gbl_queue = queue
     self._queue = deque()
     self._cond = signal
     self._event_sat_map = event_sat_map
+    self._shutdown_flag = shutdown_flag
 
   def run(self):
-    while True:
+    while not self._shutdown_flag:
       self._run_loop()
 
   def _run_loop(self):
@@ -39,10 +43,10 @@ class Relay(Thread):
 
   def _get_events(self):
     with self._cond:
-      while not len(self._gbl_queue):
+      while not len(self._gbl_queue.data):
         self._cond.wait()
-      while len(self._gbl_queue):
-          self._queue.appendleft(self._gbl_queue.pop())
+      while len(self._gbl_queue.data):
+          self._queue.appendleft(self._gbl_queue.data.pop())
 
   def _process_event(self, rec_event):
     event = rec_event.event
@@ -54,11 +58,16 @@ class Relay(Thread):
 
   def _route_event(self, rec_event):
     event = rec_event.event
+    sats_sent = {}
     for sat in self._event_sat_map.data[b('all')]:
-      _send_event(event, sat)
+      if sat not in sats_sent:
+        _send_event(event, sat)
+        sats_sent[sat] = True
     if event.type in self._event_sat_map.data:
       for sat in self._event_sat_map.data[event.type]:
-        _send_event(event, sat)
+        if sat not in sats_sent:
+          _send_event(event, sat)
+          sats_sent[sat] = True
 
   def _process_register_event(self, rec_event):
     event = rec_event.event
@@ -122,7 +131,8 @@ class _RelayTestCase(_ut.TestCase):
     self.queue = _LD(deque())
     self.signal = _Cond()
     self.ev_sat_map = _LD({b('all'): [self.sat]})
-    self.relay = Relay(self.queue, self.signal, self.ev_sat_map)
+    self.flag = Flag()
+    self.relay = Relay(self.queue, self.signal, self.ev_sat_map, self.flag)
 
   def test_send_all(self):
     # Create event to process.
@@ -136,6 +146,12 @@ class _RelayTestCase(_ut.TestCase):
     self.relay._add_sat_event(self.sat, b('test'))
     self.assertTrue(b('test') in self.ev_sat_map.data)
 
+  def test_remove_sat(self):
+    self.ev_sat_map.data[b('test')] = [self.sat]
+    self.assertTrue(self.sat in self.ev_sat_map.data[b('test')])
+    self.relay._remove_sat_event(self.sat, b('test'))
+    self.assertFalse(self.sat in self.ev_sat_map.data[b('test')])
+
   def test_register_event(self):
     # Create register event to process.
     ev = _ev.Event(type=b('register'),
@@ -143,6 +159,38 @@ class _RelayTestCase(_ut.TestCase):
     rec_ev = _ev.ReceivedEvent(ev, self.sat)
     self.assertFalse(not hasattr(ev, 'properties'))
     self.assertFalse(b('type') not in ev.properties)
+    self.assertFalse(b('test') in self.ev_sat_map.data)
     self.relay._process_register_event(rec_ev)
     self.assertEqual(self.sat_send_called, 0)
     self.assertTrue(b('test') in self.ev_sat_map.data)
+
+  def test_register(self):
+    # Create register event to process.
+    ev = _ev.Event(type=b('register'),
+                   properties={b('type'): b('test')})
+    rec_ev = _ev.ReceivedEvent(ev, self.sat)
+    self.assertFalse(b('test') in self.ev_sat_map.data)
+    self.relay._process_event(rec_ev)
+    self.assertEqual(self.sat_send_called, 0)
+    self.assertTrue(b('test') in self.ev_sat_map.data)
+
+  def test_relay(self):
+    # Add sat to b'test' types.
+    self.ev_sat_map.data[b('test')] = [self.sat]
+    # Create test event to relay.
+    ev = _ev.Event(type=b('test'),
+                   properties={b('type'): b('test')})
+    rec_ev = _ev.ReceivedEvent(ev, self.sat)
+    self.assertEqual(self.sat_send_called, 0)
+    self.relay._process_event(rec_ev)
+    self.assertEqual(self.sat_send_called, 2)
+
+  def test_run_loop(self):
+    # Create test event and add to queue.
+    ev = _ev.Event(type=b('test'),
+                   properties={b('type'): b('test')})
+    rec_ev = _ev.ReceivedEvent(ev, self.sat)
+    self.queue.data.append(rec_ev)
+    self.assertEqual(self.sat_send_called, 0)
+    self.relay._run_loop()
+    self.assertEqual(self.sat_send_called, 2)
