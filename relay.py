@@ -36,7 +36,7 @@ class Relay(Thread):
 
   def _get_events(self):
     with self._cond:
-      while not len(self._gbl_queue.data):
+      while not len(self._gbl_queue.data) and not self._shutdown_flag:
         self._cond.wait()
       while len(self._gbl_queue.data):
           self._queue.appendleft(self._gbl_queue.data.pop())
