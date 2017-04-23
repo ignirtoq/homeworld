@@ -122,7 +122,7 @@ class Satellite(object):
     """
     self._check_connection()
     self._terminate_flag.set()
-    sleep(0.75)
+    self._listener.join(0.75)
     self._socket.shutdown(SHUT_RDWR)
     self._socket.close()
 
