@@ -46,8 +46,7 @@ class Relay(Thread):
     if event.type.lower() == b('register') \
     or event.type.lower() == b('unregister'):
       self._process_register_event(rec_event)
-    else:
-      self._route_event(rec_event)
+    self._route_event(rec_event)
 
   def _route_event(self, rec_event):
     event = rec_event.event
