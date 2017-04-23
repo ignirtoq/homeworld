@@ -47,45 +47,45 @@ class _SatListener(threading.Thread):
 
   def __init__(self, socket, callback, event_list, terminate_flag, timeout=0.5):
     threading.Thread.__init__(self)
-    self._socket = socket
-    self._callback = callback
-    self._event_list = event_list
-    self._terminate_flag = terminate_flag
-    self._timeout = timeout
+    self.__socket = socket
+    self.__callback = callback
+    self.__event_list = event_list
+    self.__terminate_flag = terminate_flag
+    self.__timeout = timeout
 
   def run(self):
-    while not self._terminate_flag:
-      self._run_loop()
+    while not self.__terminate_flag:
+      self.__run_loop()
 
-  def _run_loop(self):
-    rd_list = select([self._socket], [], [], self._timeout)[0]
+  def __run_loop(self):
+    rd_list = select([self.__socket], [], [], self.__timeout)[0]
     if len(rd_list):
-      event = self._get_event()
-      self._process_event(event)
+      event = self.__get_event()
+      self.__process_event(event)
 
-  def _get_event(self):
-    msg = self._socket.recv(4)
+  def __get_event(self):
+    msg = self.__socket.recv(4)
     if not len(msg):
       # Message is zero-length, so the socket is closed.
-      self._terminate_flag.set()
+      self.__terminate_flag.set()
       return
     event_len = bytes2long(msg)
-    event_bytes = self._socket.recv(event_len)
+    event_bytes = self.__socket.recv(event_len)
     return Event().from_bytes(event_bytes)
 
-  def _process_event(self, event):
+  def __process_event(self, event):
     """
     Passes a caught event to the callback function, if set.
     Otherwise appends event list stored in parent Satellite.
     """
-    if self._callback.callback:
-      callback = self._callback.callback
-      args = self._callback.callback_args
-      kwargs = self._callback.callback_kwargs
+    if self.__callback.callback:
+      callback = self.__callback.callback
+      args = self.__callback.callback_args
+      kwargs = self.__callback.callback_kwargs
       callback(event, *args, **kwargs)
     else:
-      with self._event_list.lock:
-        self._event_list.data.append(event)
+      with self.__event_list.lock:
+        self.__event_list.data.append(event)
 
 
 class Satellite(object):
@@ -94,12 +94,12 @@ class Satellite(object):
   """
 
   def __init__(self, timeout=2):
-    self._timeout = timeout
-    self._connected = False
-    self._callback = _SatCallback()
-    self._terminate_flag = Flag()
-    self._events = LockedData([])
-    self._event_types = []
+    self.__timeout = timeout
+    self.__connected = False
+    self.__callback = _SatCallback()
+    self.__terminate_flag = Flag()
+    self.__events = LockedData([])
+    self.__event_types = []
 
   def launch(self, core_host=gethostname(), core_port=default_core_port):
     """
@@ -107,11 +107,11 @@ class Satellite(object):
     """
     core_addr = (core_host, core_port)
     try:
-      self._socket = create_connection(core_addr, self._timeout)
+      self.__socket = create_connection(core_addr, self.__timeout)
     except timeout:
       raise ConnectionError('could not connect to Core')
-    self._spawn_listener()
-    self._connected = True
+    self.__spawn_listener()
+    self.__connected = True
 
   def terminate(self):
     """
@@ -120,11 +120,11 @@ class Satellite(object):
     To send and receive further events, the satellite will need to be relaunched
     with the launch() method.
     """
-    self._check_connection()
-    self._terminate_flag.set()
-    self._listener.join(0.75)
-    self._socket.shutdown(SHUT_RDWR)
-    self._socket.close()
+    self.__check_connection()
+    self.__terminate_flag.set()
+    self.__listener.join(0.75)
+    self.__socket.shutdown(SHUT_RDWR)
+    self.__socket.close()
 
   def event_callback(self, callback, *args, **kwargs):
     """
@@ -133,54 +133,54 @@ class Satellite(object):
     This function must take the event as the first argument.  The remaining
     arguments provided to this function will be passed into the callback.
     """
-    self._callback(callback, *args, **kwargs)
+    self.__callback(callback, *args, **kwargs)
 
   def send_event(self, event):
-    self._check_connection()
+    self.__check_connection()
     event_bytes = event.to_bytes()
     event_len = long2bytes(len(event_bytes))
-    self._socket.send(event_len)
-    self._socket.send(event_bytes)
+    self.__socket.send(event_len)
+    self.__socket.send(event_bytes)
 
   def register(self, event_type):
     event = Event(type=b('register'), properties={b('type'): b(event_type)})
     self.send_event(event)
-    self._event_types.append(event_type)
+    self.__event_types.append(event_type)
 
   def unregister(self, event_type):
     event = Event(type=b('unregister'), properties={b('type'): b(event_type)})
     self.send_event(event)
-    self._event_types.remove(event_type)
+    self.__event_types.remove(event_type)
 
   @property
   def events(self):
     retevents = []
-    with self._events.lock:
-      while len(self._events.data):
-        retevents.append(self._events.data.pop())
+    with self.__events.lock:
+      while len(self.__events.data):
+        retevents.append(self.__events.data.pop())
     return retevents
 
   @property
   def connected(self):
-    return self._connected
+    return self.__connected
 
   @property
   def event_types(self):
-    return [x for x in self._event_types]
+    return [x for x in self.__event_types]
 
-  def _check_connection(self):
-    if not self._connected:
+  def __check_connection(self):
+    if not self.__connected:
       raise NotConnectedError('not connected to Core')
 
-  def _spawn_listener(self):
-    self._terminate_flag.unset()
-    self._listener = _SatListener(socket=self._socket,
-                                  event_list=self._events,
-                                  callback=self._callback,
-                                  terminate_flag=self._terminate_flag)
-    self._listener.start()
+  def __spawn_listener(self):
+    self.__terminate_flag.unset()
+    self.__listener = _SatListener(socket=self.__socket,
+                                  event_list=self.__events,
+                                  callback=self.__callback,
+                                  terminate_flag=self.__terminate_flag)
+    self.__listener.start()
 
-  def _terminate_listener(self):
-    self._terminate_flag.set()
-    self._listener.join(timeout=1)
-    return not self._listener.is_alive()
+  def __terminate_listener(self):
+    self.__terminate_flag.set()
+    self.__listener.join(timeout=1)
+    return not self.__listener.is_alive()
