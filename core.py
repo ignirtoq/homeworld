@@ -14,6 +14,8 @@ from relay import Relay
 # Unit test modules
 import unittest as _ut
 
+default_core_port = 51100
+
 
 class InvalidCoreState(RuntimeError):
   pass
@@ -27,16 +29,13 @@ class Core(object):
   """
   Manages a home-automation satellite swarm.
   """
-  def __init__(self, port=51100, num_relays=4):
+  def __init__(self, port=default_core_port, num_relays=4):
     self._init_data_structures(port, num_relays)
 
   def _init_data_structures(self, port, num_relays):
     self._clean = True
     self._num_relays = num_relays
-    # Set up socket to listen for new satellites.
-    self._public_sock = socket()
-    self._public_sock.bind((gethostname(), port))
-    self._public_sock.listen(1)
+    self._port = port
     # Map from socket to addr structure of each satellite.
     self._sat_map = LockedData(dict())
     # Map from event type to list of satellite sockets.
@@ -58,6 +57,10 @@ class Core(object):
     self._clean = False
     # Reset the shutdown flag in case Core is being restarted.
     self._shutdown_flag.unset()
+    # Set up socket to listen for new satellites.
+    self._public_sock = socket()
+    self._public_sock.bind((gethostname(), self._port))
+    self._public_sock.listen(1)
     # Construct and start the Spaceport.
     # This allows new satellites to connect to the Core.
     self._spaceport = Spaceport(socket=self._public_sock,
@@ -86,9 +89,11 @@ class Core(object):
   def _close_sockets(self, core, satellites):
     if core:
       self._public_sock.shutdown(SHUT_RDWR)
+      self._public_sock.close()
     if satellites:
       for sat in self._sat_map.data:
         sat.shutdown(SHUT_RDWR)
+        sat.close()
 
   def _join_thread(self, thread):
     thread.join(0.5)
