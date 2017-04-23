@@ -95,8 +95,8 @@ class Core(object):
         sat.shutdown(SHUT_RDWR)
         sat.close()
 
-  def _join_thread(self, thread):
-    thread.join(0.5)
+  def _join_thread(self, thread, timeout=0.5):
+    thread.join(timeout)
     return not thread.is_alive()
 
   def _gen_shutdown_error_msg(self, sp_down, gc_down, r_down):
@@ -124,9 +124,8 @@ class Core(object):
     # Notify the relays they need to wake up and shutdown.
     with self._cond:
       self._cond.notify_all()
-    sleep(1)
     # Join the threads.
-    spaceport_down = self._join_thread(self._spaceport)
+    spaceport_down = self._join_thread(self._spaceport, 1)
     gnd_ctrl_down = self._join_thread(self._gnd_control)
     relay_down = [self._join_thread(relay) for relay in self._relays]
     # Close the sockets.
