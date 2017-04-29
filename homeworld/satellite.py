@@ -125,6 +125,7 @@ class Satellite(object):
     self.__listener.join(0.75)
     self.__socket.shutdown(SHUT_RDWR)
     self.__socket.close()
+    self.__event_types = []
 
   def event_callback(self, callback, *args, **kwargs):
     """
